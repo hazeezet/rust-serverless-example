@@ -1,0 +1,192 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: rust-serverless-api, Sample SAM Template for rust-serverless-api
+
+# Parameters
+Parameters:
+  StageName:
+    Type: String
+    Default: dev
+    Description: The stage name for the API Gateway.
+
+# Globals
+Globals:
+  Function:
+    MemorySize: 128
+    Timeout: 30
+    Tracing: Active
+    Runtime: provided.al2023
+    LoggingConfig:
+      LogGroup: !Sub /rust-example/${StageName}/example
+      LogFormat: JSON
+    Environment:
+      Variables:
+        STAGE: !Sub ${StageName}
+
+Resources:
+  RustExample:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: !Sub ${AWS::StackName}
+      Description: !Sub Rust Example Service ( ${StageName} )
+
+# Default Error Responses
+  GatewayResponseBadRequestBody:
+    Type: AWS::ApiGateway::GatewayResponse
+    Properties:
+      RestApiId: !Ref RustExample
+      ResponseType: BAD_REQUEST_BODY
+      StatusCode: 400
+      ResponseTemplates:
+        application/json: '{"statusCode": 400, "message": "Bad request, please check your input", "error": "BAD_REQUEST", "data": null}'
+
+  GatewayResponseBadRequestParameters:
+    Type: AWS::ApiGateway::GatewayResponse
+    Properties:
+      RestApiId: !Ref RustExample
+      ResponseType: BAD_REQUEST_PARAMETERS
+      StatusCode: 400
+      ResponseTemplates:
+        application/json: '{"statusCode": 400, "message": "Bad request, please check your input", "error": "BAD_REQUEST", "data": null}'
+
+  GatewayResponseMissingAuthToken:
+    Type: AWS::ApiGateway::GatewayResponse
+    Properties:
+      RestApiId: !Ref RustExample
+      ResponseType: MISSING_AUTHENTICATION_TOKEN
+      StatusCode: 401
+      ResponseTemplates:
+        application/json: '{"statusCode": 401, "message": "Your session has expired", "error": "UNAUTHORIZED", "data": null}'
+
+  GatewayResponseUnauthorized:
+    Type: AWS::ApiGateway::GatewayResponse
+    Properties:
+      RestApiId: !Ref RustExample
+      ResponseType: UNAUTHORIZED
+      StatusCode: 401
+      ResponseTemplates:
+        application/json: '{"statusCode": 401, "message": "Your session has expired", "error": "UNAUTHORIZED", "data": null}'
+
+  GatewayResponseResourceNotFound:
+    Type: AWS::ApiGateway::GatewayResponse
+    Properties:
+      RestApiId: !Ref RustExample
+      ResponseType: RESOURCE_NOT_FOUND
+      StatusCode: 404
+      ResponseTemplates:
+        application/json: '{"statusCode": 404, "message": "Endpoint does not exist", "error": "RESOURCE_NOT_FOUND", "data": null}'
+
+  GatewayResponseAccessDenied:
+    Type: AWS::ApiGateway::GatewayResponse
+    Properties:
+      RestApiId: !Ref RustExample
+      ResponseType: ACCESS_DENIED
+      StatusCode: 403
+      ResponseTemplates:
+        application/json: '{"statusCode": 403, "message": "You do not have access to this resources", "error": "UNAUTHORIZED", "data": null}'
+
+  GatewayResponseDefault5xx:
+    Type: AWS::ApiGateway::GatewayResponse
+    Properties:
+      RestApiId: !Ref RustExample
+      ResponseType: DEFAULT_5XX
+      StatusCode: 500
+      ResponseTemplates:
+        application/json: '{"statusCode": 500, "message": "Internal server error", "error": "SERVER_ERROR", "data": null}'
+
+# Routes
+  HelloResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !GetAtt RustExample.RootResourceId
+      PathPart: hello
+      RestApiId: !Ref RustExample
+
+  HelloNameResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !Ref HelloResource
+      PathPart: '{name}'
+      RestApiId: !Ref RustExample
+
+# Lambda
+  GreetingManager:
+    Type: AWS::Serverless::Function
+    Metadata:
+      BuildMethod: makefile
+    Properties:
+      CodeUri: .
+      Handler: bootstrap
+      Runtime: provided.al2023
+      Architectures: ["arm64"]
+
+# Methods
+  GetHelloMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref RustExample
+      ResourceId: !Ref HelloResource
+      AuthorizationType: NONE
+      HttpMethod: GET
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub "arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GreetingManager.Arn}/invocations"
+
+  PostHelloMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref RustExample
+      ResourceId: !Ref HelloResource
+      AuthorizationType: NONE
+      HttpMethod: POST
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub "arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GreetingManager.Arn}/invocations"
+
+  GetHelloNameMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref RustExample
+      ResourceId: !Ref HelloNameResource
+      AuthorizationType: NONE
+      HttpMethod: GET
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub "arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GreetingManager.Arn}/invocations"
+
+# Permissions
+  GreetingManagerApiPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref GreetingManager
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${RustExample}/*"
+
+# Deployment
+  ApiDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn:
+      - GetHelloMethod
+      - PostHelloMethod
+      - GetHelloNameMethod
+    Properties:
+      RestApiId: !Ref RustExample
+
+  ApiStage:
+    Type: AWS::ApiGateway::Stage
+    Properties:
+      RestApiId: !Ref RustExample
+      DeploymentId: !Ref ApiDeployment
+      StageName: !Ref StageName
+
+Outputs:
+  ApiUrl:
+    Description: API Gateway endpoint URL
+    Value: !Sub "https://${RustExample}.execute-api.${AWS::Region}.amazonaws.com/${StageName}"
+  GreetingManagerArn:
+    Description: Greeting Manager Lambda Function ARN
+    Value: !GetAtt GreetingManager.Arn

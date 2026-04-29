@@ -1,0 +1,29 @@
+[package]
+name = "rust-serverless-api"
+version = "0.1.0"
+edition = "2021"
+
+[profile.release]
+# Optimize for size
+opt-level = "z"
+# Link Time Optimization
+lto = true
+# Strip symbols from binary
+strip = true
+# Reduce number of codegen units for better optimization
+codegen-units = 1
+# Panic abort instead of unwind to reduce binary size
+panic = "abort"
+
+[dependencies]
+lambda_runtime = "0.14"
+aws_lambda_events = "0.18"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1", features = ["macros"] }
+tracing = { version = "0.1", features = ["log"] }
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt"] }
+
+[[bin]]
+name = "GreetingManager"
+path = "src/bin/GreetingManager.rs"
